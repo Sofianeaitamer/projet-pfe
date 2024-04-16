@@ -1,0 +1,64 @@
+library(dplyr)
+library(survey)
+library(writexl)
+library(ggplot2)
+library(foreign)
+library(dplyr)
+library(writexl)
+options(survey.lonely.psu = 'adjust')
+
+#Demographic
+download.file("https://wwwn.cdc.gov/Nchs/Nhanes/2003-2004/DEMO_C.XPT",Dtf<-tempfile(), mode="wb")
+DEMO<-foreign::read.xport(Dtf)
+
+#body Measures
+download.file("https://wwwn.cdc.gov/Nchs/Nhanes/2003-2004/BMX_C.XPT", tf<-tempfile(), mode="wb")
+BM_DATA=foreign::read.xport(tf)
+tour_taille= BM_DATA$BMXWAIST
+
+#diabéte
+download.file("https://wwwn.cdc.gov/Nchs/Nhanes/2003-2004/DIQ_C.XPT", tf<-tempfile(), mode="wb")
+DBT_DATA=foreign::read.xport(tf)
+
+#hépatite B et C
+download.file("https://wwwn.cdc.gov/Nchs/Nhanes/2003-2004/L02_C.XPT", tf<-tempfile(), mode="wb")
+HBC_DATA=foreign::read.xport(tf)
+
+#Glycémie et insuline
+download.file("https://wwwn.cdc.gov/Nchs/Nhanes/2003-2004/L10AM_C.XPT", tf<-tempfile(), mode="wb")
+Gi_DATA=foreign::read.xport(tf)
+
+#HDL
+download.file("https://wwwn.cdc.gov/Nchs/Nhanes/2003-2004/L13_C.XPT", tf<-tempfile(), mode="wb")
+HDL_DATA=foreign::read.xport(tf)
+
+#LDL
+download.file("https://wwwn.cdc.gov/Nchs/Nhanes/2003-2004/L13AM_C.XPT", tf<-tempfile(), mode="wb")
+LDL_DATA=foreign::read.xport(tf)
+
+data <- full_join(DEMO, BM_DATA, by = "SEQN") %>%
+  full_join(DBT_DATA, by = "SEQN") %>%
+  full_join(HBC_DATA, by = "SEQN") %>%
+  full_join(Gi_DATA, by = "SEQN") %>%
+  full_join(HDL_DATA, by = "SEQN") %>%
+  full_join(LDL_DATA, by = "SEQN")
+
+# Création de variables qualitatives pour le genre, l'âge et l'IMC
+data$Gender <- factor(data$RIAGENDR, labels = c("Male", "Female"))
+
+data$Age.Group <- cut(data$RIDAGEYR, breaks = c(-Inf, 17, 34, 49, 64, Inf),
+                      labels = c("Inf 18", "18-34", "35-49", "50-64", "65 et plus"))
+
+data$BMI.Group <- cut(data$BMXBMI, breaks = c(-Inf, 18.5, 24.9, 29.9, Inf),
+                      labels = c("Underweight", "Normal weight", "Overweight", "Obese"))
+
+# Pour la variable Indice de Pauvreté (Poverty income)
+data$Poverty.Income <- cut(data$INDFMPIR, breaks = c(-Inf, 1, Inf),
+                           labels = c("low income", "higher income"))
+
+# Recodage des valeurs en NA pour la consommation d'alcool
+data$LBXHBC[HBC_DATA$LBXHBC== 1461 | HBC_DATA$LBXHBC== 8847] <- NA
+data$LBDHCV[HBC_DATA$LBDHCV== 1461 | HBC_DATA$LBDHCV== 8847] <- NA
+data$LBDHDDSI[HDL_DATA$LBDHDDSI== 782 | HDL_DATA$LBDHDDSI== 8556] <- NA
+
+write_xlsx(data_manipulé, "C:/Users/sofia/OneDrive/Bureau/COURS/S6/memoire.xlsx")
