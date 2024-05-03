@@ -1,0 +1,229 @@
+library(dplyr)
+library(survey)
+library(writexl)
+library(ggplot2)
+library(foreign)
+library(writexl)
+options(survey.lonely.psu = 'adjust')
+
+#Demographic
+download.file("https://wwwn.cdc.gov/Nchs/Nhanes/2003-2004/DEMO_C.XPT",tf<-tempfile(), mode="wb")
+DEMO<-foreign::read.xport(tf)
+
+#body Measures
+download.file("https://wwwn.cdc.gov/Nchs/Nhanes/2003-2004/BMX_C.XPT", tf<-tempfile(), mode="wb")
+BM_DATA=foreign::read.xport(tf)
+tour_taille= BM_DATA$BMXWAIST
+
+#diabéte
+download.file("https://wwwn.cdc.gov/Nchs/Nhanes/2003-2004/DIQ_C.XPT", tf<-tempfile(), mode="wb")
+DBT_DATA=foreign::read.xport(tf)
+
+#hépatite B et C
+download.file("https://wwwn.cdc.gov/Nchs/Nhanes/2003-2004/L02_C.XPT", tf<-tempfile(), mode="wb")
+HBC_DATA=foreign::read.xport(tf)
+
+#Glycémie et insuline
+download.file("https://wwwn.cdc.gov/Nchs/Nhanes/2003-2004/L10AM_C.XPT", tf<-tempfile(), mode="wb")
+Gi_DATA=foreign::read.xport(tf)
+
+#HDL
+download.file("https://wwwn.cdc.gov/Nchs/Nhanes/2003-2004/L13_C.XPT", tf<-tempfile(), mode="wb")
+HDL_DATA=foreign::read.xport(tf)
+
+#LDL
+download.file("https://wwwn.cdc.gov/Nchs/Nhanes/2003-2004/L13AM_C.XPT", tf<-tempfile(), mode="wb")
+LDL_DATA=foreign::read.xport(tf)
+
+#consomation d'alcool :
+download.file("https://wwwn.cdc.gov/Nchs/Nhanes/2003-2004/ALQ_C.XPT", tf<-tempfile(), mode="wb")
+alcool_DATA=foreign::read.xport(tf)
+
+
+data <- full_join(DEMO, BM_DATA, by = "SEQN") %>%
+  full_join(DBT_DATA, by = "SEQN") %>%
+  full_join(HBC_DATA, by = "SEQN") %>%
+  full_join(Gi_DATA, by = "SEQN") %>%
+  full_join(HDL_DATA, by = "SEQN") %>%
+  full_join(LDL_DATA, by = "SEQN") %>%
+  full_join(alcool_DATA, by = "SEQN")
+
+# Création de variables qualitatives pour le genre, l'âge et l'IMC
+data$Gender <- factor(data$RIAGENDR, labels = c("Male", "Female"))
+
+data$Age.Group <- cut(data$RIDAGEYR, breaks = c(-Inf, 17, 34, 49, 64, Inf),
+                      labels = c("Inf 18", "18-34", "35-49", "50-64", "65 et plus"))
+
+data$BMI.Group <- cut(data$BMXBMI, breaks = c(-Inf, 18.5, 24.9, 29.9, Inf),
+                      labels = c("Underweight", "Normal weight", "Overweight", "Obese"))
+
+data$Hommes_Alcool <- ifelse(data$Gender == "Male" & data$ALQ120Q >= 2, 1, 0)
+
+
+data$Femmes_Alcool <- ifelse(data$Gender == "Female" & data$ALQ120Q >= 1, 1, 0)
+Hepatite_B=data$LBXHBC
+
+data <- data %>%
+  mutate(Femme_Enceinte = ifelse(RIDEXPRG == 1, "Enceinte", "Non enceinte"))
+
+data <- data %>%
+  mutate(Diabet = ifelse(DIQ010 == 1, "diabetic", "Non diabetic"))
+
+# Pour la variable Indice de Pauvreté (Poverty income)
+data$Poverty.Income <- cut(data$INDFMPIR, breaks = c(-Inf, 1, Inf),
+                           labels = c("low income", "higher income"))
+
+# Recodage des valeurs en NA pour la consommation d'alcool
+data$LBXHBC[HBC_DATA$LBXHBC== 1461 | HBC_DATA$LBXHBC== 8847] <- NA
+data$LBDHCV[HBC_DATA$LBDHCV== 1461 | HBC_DATA$LBDHCV== 8847] <- NA
+data$LBDHDDSI[HDL_DATA$LBDHDDSI== 782 | HDL_DATA$LBDHDDSI== 8556] <- NA
+data$ALQ120Q[HBC_DATA$ALQ120Q== 3385 | HBC_DATA$ALQ120Q== 4742] <- NA
+data$ALQ120Q[HBC_DATA$RIDEXPRG== 6992 | HBC_DATA$RIDEXPRG== 10122] <- NA
+
+# pour cree un data frame aavec que les valeurs donnés:
+my_data <- data %>%
+  select(Gender, Age.Group, BMI.Group, Femmes_Alcool, Hommes_Alcool,Femme_Enceinte,Diabet)
+my_data$Hepatite_B <- data$LBXHBC
+my_data$Hepatite_C <- data$LBDHCV
+
+
+#pour mettre my_data en fichier exel :
+write_xlsx(my_data, "C:/Users/sofia/OneDrive/Bureau/COURS/S6/memoire.xlsx")
+
+
+# compteur demander :
+#hepatite_b
+summary_table_b <- table(my_data$Hepatite_B)
+nombre_positives_b <- summary_table_b[1]
+print(nombre_positives_b)
+
+#hepatite_c
+summary_table <- table(my_data$Hepatite_C)
+nombre_positives_c <- summary_table[1]
+print(nombre_positives_c)
+
+#homme +2 alcool
+nb_hommes_alcool <- sum(data$ALQ120Q[data$Gender == "Male"] >= 2, na.rm = TRUE) 
+cat("Nombre d'hommes consommant deux verres ou plus d'alcool:", nb_hommes_alcool, "\n")
+
+# femme +1 alcool
+nb_femmes_alcool <- sum(data$ALQ120Q[data$Gender == "Female"] >= 1, na.rm = TRUE) 
+cat("Nombre de femmes consommant un verre ou plus d'alcool:", nb_femmes_alcool, "\n")
+
+# Compteur du nombre de femmes enceintes
+nb_femmes_enceintes <- sum(data$RIDEXPRG == 1 & !is.na(data$RIDEXPRG))
+cat("Nombre de femmes encenintes :", nb_femmes_enceintes , "\n")
+
+#pour son graphe :
+# Calcul du nombre total de femmes
+total_femmes <- sum(data$Gender == "Female", na.rm = TRUE)
+
+# Création d'un data frame pour le graphique
+data_graphique <- data.frame( Category = c("Femmes Enceintes", "Femmes pas enceintes"),
+                              Count = c(nb_femmes_enceintes, total_femmes - nb_femmes_enceintes))
+
+# le graphe :
+ggplot(data_graphique, aes(x = "", y = Count, fill = Category)) + geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) +
+  labs(title = "Répartition des Femmes Enceintes par rapport au Nombre Total de Femmes") +theme_void() +
+  theme(legend.position = "right")
+
+#les graphe pour les hommes et femmes qui consomme plus d'un ou deux vert d'alcool :
+# Calcul du nombre total d'hommes
+total_hommes <- sum(!is.na(data$Hommes_Alcool))
+
+# Création d'un data frame pour les hommes
+data_hommes <- data.frame(
+  Groupe = c("Hommes consommant plus de 2 verres", "Autres hommes"),
+  Count = c(nb_hommes_alcool, total_hommes - nb_hommes_alcool))
+
+# Graphique en forme de cercle pour les hommes
+ggplot(data_hommes, aes(x = "", y = Count, fill = Groupe)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Répartition des hommes par rapport à la consommation d'alcool",
+       x = NULL, y = NULL) +
+  theme_void() +
+  theme(legend.position = "bottom")
+
+# Calcul du nombre total de femmes
+total_femmes <- sum(!is.na(data$Femmes_Alcool))
+
+# Création d'un data frame pour les femmes
+data_femmes <- data.frame(
+  Groupe = c("Femmes consommant plus de 1 verre", "Autres femmes"),
+  Count = c(nb_femmes_alcool, total_femmes - nb_femmes_alcool))
+
+# Graphique en forme de cercle pour les femmes
+ggplot(data_femmes, aes(x = "", y = Count, fill = Groupe)) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar(theta = "y") +
+  labs(title = "Répartition des femmes par rapport à la consommation d'alcool",
+       x = NULL, y = NULL) +
+  theme_void() +
+  theme(legend.position = "bottom") 
+
+
+#les separer hommes et femmes :
+
+
+
+diabetic_summary <- data %>%
+  mutate(Diabetes = ifelse(DIQ010 == 1, "Diabetes", "No Diabetes")) %>%
+  group_by(Age.Group, Gender, Diabetes) %>%
+  summarize(Count = n())
+
+# le graphe pour les hommes et femmes :
+ggplot(diabetic_summary, aes(x = Age.Group, y = Count, fill = Diabetes)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_grid(. ~ Gender) +
+  labs(title = "Nombre de diabétiques et non-diabétiques par tranche d'âge et genre",
+       x = "Tranche d'âge", y = "Nombre de personnes") +
+  scale_fill_manual(values = c("blue", "red")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+#imc par rapport a la tranche d'age et gender :
+
+# Calcul du nombre de personnes par groupe IMC, tranche d'âge et genre
+imc_summary <- my_data %>%
+  group_by(Age.Group, Gender, BMI.Group) %>%
+  summarize(Count = n())
+
+# Création de l'histogramme
+ggplot(imc_summary, aes(x = Age.Group, y = Count, fill = BMI.Group)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_grid(. ~ Gender) +
+  labs(title = "Nombre de personnes par IMC par tranche d'âge et genre",
+       x = "Tranche d'âge", y = "Nombre de personnes") +
+  scale_fill_manual(values = c("blue", "green", "orange", "red")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+nb_femmes_enceintes_alcool <- sum(data$RIDEXPRG == 1 & data$ALQ120Q >= 1, na.rm = TRUE) 
+
+
+# Calcul du nombre total de femmes enceintes
+femmes_enceintes_total <- sum(!is.na(my_data$Femme_Enceinte) & my_data$Femme_Enceinte == "Enceinte")
+
+# Calcul du nombre de femmes enceintes qui boivent plus d'un verre d'alcool par jour
+femmes_enceintes_boivent_plus_un_verre <- sum(!is.na(my_data$Femme_Enceinte) & my_data$Femme_Enceinte == "Enceinte" & my_data$Femmes_Alcool >= 1)
+
+# Création d'un data frame pour le graphique
+data_femmes_alcool_age <- my_data %>%
+  filter(!is.na(Femme_Enceinte) & Femme_Enceinte == "Enceinte" & !is.na(Femmes_Alcool)) %>%
+  group_by(Age.Group, Femmes_Alcool) %>%
+  summarise(Count = n()) %>%
+  mutate(Category = ifelse(Femmes_Alcool >= 1, "Femmes Enceintes qui boivent plus d'un verre", "Femmes Enceintes qui ne boivent pas"))
+
+# Graphique en barres horizontales pour les femmes enceintes par tranche d'âge
+ggplot(data_femmes_alcool_age, aes(x = Age.Group, y = Count, fill = Category)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.7) +
+  labs(title = "Proportion de femmes enceintes qui boivent plus d'un verre d'alcool par jour par tranche d'âge",
+       x = "Tranche d'âge", y = "Nombre de femmes") +
+  scale_fill_manual(values = c("red", "blue")) +  # Rouge pour celles qui boivent, bleu pour celles qui ne boivent pas
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 12),  
+        axis.text.y = element_text(size = 12),  
+        axis.title = element_text(size = 14),  
+        plot.title = element_text(size = 16)) 
